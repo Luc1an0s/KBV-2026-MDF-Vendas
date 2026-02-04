@@ -8,31 +8,29 @@ from sshtunnel import SSHTunnelForwarder
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 
+
 load_dotenv()
 
-# Configurações de Ambiente
-ssh_host = os.getenv("SSH_HOST")
-ssh_port = int(os.getenv("SSH_PORT", 22))
-ssh_user = os.getenv("SSH_USER")
-ssh_password = os.getenv("SSH_PASSWORD")
-mysql_host = os.getenv("DB_HOST")
-mysql_user = os.getenv("DB_USER")
-mysql_password = os.getenv("DB_PASS")
-mysql_db = os.getenv("DB_NAME")
-mysql_port = int(os.getenv("DB_PORT", 3306))
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
-ABA_NOME = os.getenv("ABA_NOME")
+ssh_host = os.environ.get("SSH_HOST")
+ssh_port = int(os.environ.get("SSH_PORT", 22))
+ssh_user = os.environ.get("SSH_USER")
+ssh_password = os.environ.get("SSH_PASSWORD")
+
+mysql_host = os.environ.get("DB_HOST")
+mysql_user = os.environ.get("DB_USER")
+mysql_password = os.environ.get("DB_PASS")
+mysql_db = os.environ.get("DB_NAME")
+mysql_port = int(os.environ.get("DB_PORT", 3306))
+
+SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
+ABA_NOME = os.environ.get("ABA_NOME")
 
 ARQUIVO_CONTROLE = os.path.abspath("controle_incremental.json")
 
 def salvar_controle(date, time, nfno):
-    # Formata para YYYYMMDD para o JSON
     data_formatada = str(date).replace("-", "").split(" ")[0]
-    
-    # Proteção contra datas inválidas ou nulas
     if len(data_formatada) < 8 or "1970" in data_formatada or "NaT" in data_formatada:
         return
-        
     with open(ARQUIVO_CONTROLE, "w") as f:
         json.dump({"date": data_formatada, "time": int(time), "nfno": int(nfno)}, f, indent=4)
 
@@ -64,6 +62,7 @@ def conectar_banco():
 
 def conectar_sheets():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    
     creds = ServiceAccountCredentials.from_json_keyfile_name("credenciais_google.json", scope)
     return gspread.authorize(creds)
 
@@ -75,7 +74,6 @@ def main():
     inicio_mes_str = hoje.replace(day=1).strftime('%Y%m%d')
     data_json = str(controle["date"]).replace("-", "")
 
-    # Define ponto de partida (mês atual ou último registro)
     if data_json < inicio_mes_str:
         data_busca, hora_busca, nota_busca = inicio_mes_str, 0, 0
     else:
@@ -114,7 +112,6 @@ def main():
         )
         ORDER BY m.date, m.time, m.nfno
     """
-
     params = (data_busca, data_busca, hora_busca, data_busca, hora_busca, nota_busca)
 
     try:
@@ -124,15 +121,13 @@ def main():
         server.stop()
 
     if df.empty:
-        print("Nenhum dado novo.")
+        print("Nenhum dado novo encontrado.")
         return
 
-    # --- AJUSTE DE VALORES NUMÉRICOS ---
-    # quantity / 1000 e total_value / 100000
+  
     df['quantity'] = (df['quantity'] / 1000).round(3)
     df['total_value'] = (df['total_value'] / 100000).round(2)
 
-    # --- TRATAMENTO DE DATAS PARA O GOOGLE SHEETS ---
     df['col_date'] = pd.to_datetime(df['col_date'], errors='coerce')
     df['payment_date'] = pd.to_datetime(df['payment_date'], errors='coerce')
 
@@ -141,32 +136,20 @@ def main():
     client = conectar_sheets()
     sheet = client.open_by_key(SPREADSHEET_ID).worksheet(ABA_NOME)
     
-    # Se a planilha estiver vazia, adiciona o cabeçalho
     if not sheet.get_all_values():
         sheet.append_row(df.columns.tolist())
 
-    # Prepara o upload formatando como string para o Sheets reconhecer
     df_upload = df.copy()
     df_upload['col_date'] = df_upload['col_date'].dt.strftime('%Y-%m-%d')
     df_upload['payment_date'] = df_upload['payment_date'].dt.strftime('%Y-%m-%d')
-    
-    # Substitui valores nulos por vazio
     df_upload = df_upload.fillna('')
     
     dados = df_upload.values.tolist()
     
-    # Upload em blocos de 100 linhas
     for i in range(0, len(dados), 100):
-        sheet.append_rows(
-            dados[i:i + 100], 
-            value_input_option="USER_ENTERED"
-        )
+        sheet.append_rows(dados[i:i + 100], value_input_option="USER_ENTERED")
 
-    # Pega a data da última linha para o controle
-    if pd.notnull(ultima_linha['col_date']):
-        nova_data_json = ultima_linha['col_date'].strftime('%Y%m%d')
-    else:
-        nova_data_json = data_busca
+    nova_data_json = ultima_linha['col_date'].strftime('%Y%m%d') if pd.notnull(ultima_linha['col_date']) else data_busca
 
     salvar_controle(
         date=nova_data_json,
@@ -174,7 +157,7 @@ def main():
         nfno=ultima_linha['col_nfno']
     )
     
-    print(f"Sucesso! {len(df)} linhas enviadas. Controle atualizado para: {nova_data_json}")
+    print(f"Sucesso! {len(df)} linhas enviadas. Controle: {nova_data_json}")
 
 if __name__ == "__main__":
     main()
