@@ -1,0 +1,50 @@
+name: Sincronizador Banco para Sheets
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Roda de 1 em 1 hora.
+  workflow_dispatch:      # Permite rodar manualmente clicando num botão
+
+jobs:
+  executar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write    # Permite que o GitHub salve o arquivo de controle
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Criar arquivo de credenciais Google
+        run: echo '${{ secrets.GOOGLE_JSON }}' > credenciais_google.json
+
+      - name: Rodar Script
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          ABA_NOME: ${{ secrets.ABA_NOME }}
+        run: python seu_script.py
+
+      - name: Salvar progresso no controle_incremental.json
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add controle_incremental.json
+          git commit -m "Sincronização: Atualizando controle incremental" || echo "Sem novos dados para commitar"
+          git push
