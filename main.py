@@ -10,13 +10,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- FUNÇÃO AUXILIAR PARA EVITAR ERRO DE PORTA VAZIA ---
 def get_env_int(name, default):
     value = os.environ.get(name, "")
-    # Se o valor existir e for apenas números, converte. Senão, usa o padrão.
+
     return int(value) if value.strip().isdigit() else default
 
-# --- CONFIGURAÇÕES DE AMBIENTE ---
 ssh_host = os.environ.get("SSH_HOST")
 ssh_port = get_env_int("SSH_PORT", 22)
 ssh_user = os.environ.get("SSH_USER")
@@ -33,7 +31,6 @@ ABA_NOME = os.environ.get("ABA_NOME")
 
 ARQUIVO_CONTROLE = os.path.abspath("controle_incremental.json")
 
-# --- FUNÇÕES DE CONTROLE ---
 def salvar_controle(date, time, nfno):
     data_formatada = str(date).replace("-", "").split(" ")[0]
     if len(data_formatada) < 8 or "1970" in data_formatada or "NaT" in data_formatada:
@@ -50,7 +47,6 @@ def ler_controle():
     with open(ARQUIVO_CONTROLE, "r") as f:
         return json.load(f)
 
-# --- CONEXÕES ---
 def conectar_banco():
     try:
         print(f"Tentando abrir túnel SSH para {ssh_host}...")
@@ -88,7 +84,6 @@ def conectar_sheets():
         print(f"ERRO NA CONEXÃO COM GOOGLE SHEETS: {e}")
         raise
 
-# --- SCRIPT PRINCIPAL ---
 def main():
     inicializar_controle()
     controle = ler_controle()
@@ -147,7 +142,6 @@ def main():
         print("Nenhum dado novo encontrado.")
         return
 
-    # --- AJUSTES DE VALORES ---
     df['quantity'] = (df['quantity'] / 1000).round(3)
     df['total_value'] = (df['total_value'] / 100000).round(2)
 
