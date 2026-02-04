@@ -2,5 +2,6 @@ pandas
 gspread
 mysql-connector-python
 sshtunnel
+paramiko==2.12.0
 oauth2client
 python-dotenv
