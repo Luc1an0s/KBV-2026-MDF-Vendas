@@ -3,13 +3,13 @@ name: Sincronizador Banco para Sheets
 on:
   schedule:
     - cron: '0 * * * *' # Roda de 1 em 1 hora.
-  workflow_dispatch:      # Permite rodar manualmente clicando num botão
+  workflow_dispatch:     
 
 jobs:
   executar:
     runs-on: ubuntu-latest
     permissions:
-      contents: write    # Permite que o GitHub salve o arquivo de controle
+      contents: write   
 
     steps:
       - name: Checkout do código
@@ -39,7 +39,7 @@ jobs:
           DB_PORT: ${{ secrets.DB_PORT }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           ABA_NOME: ${{ secrets.ABA_NOME }}
-        run: python seu_script.py
+        run: python main.py
 
       - name: Salvar progresso no controle_incremental.json
         run: |
