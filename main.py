@@ -103,33 +103,35 @@ def main():
 
     query = """
         SELECT
-            m.time AS col_time,
-            m.nfno AS col_nfno,
-            CAST(m.date AS CHAR) AS col_date,
-            custp.cpf_cgc AS document,
-            m.custno AS client_internal_code,
-            custp.name AS client_name,
-            CONCAT(m.nfno, '/', m.nfse) AS order_code,
-            CAST(m.date AS CHAR) AS payment_date,
-            trim(f.prdno) AS sku,
-            prd.name AS product_description,
-            type.name AS category,
-            f.qtty AS quantity,
-            xaprd2.precoUnitario AS total_value
-        FROM pxaprd f
-        JOIN pxa m ON f.xano = m.xano
-        JOIN custp ON m.custno = custp.no
-        JOIN prd ON f.prdno = prd.no
-        JOIN type ON prd.typeno = type.no
-        JOIN xaprd2 ON f.xano = xaprd2.xano AND f.prdno = xaprd2.prdno AND f.nfno = xaprd2.nfno AND f.nfse = xaprd2.nfse AND f.storeno = xaprd2.storeno
-        WHERE m.storeno = 1
-        AND prd.typeno = 5
-        AND (
-              (m.date > %s)
-           OR (m.date = %s AND m.time > %s)
-           OR (m.date = %s AND m.time = %s AND m.nfno > %s)
-        )
-        ORDER BY m.date, m.time, m.nfno
+        m.time AS col_time,
+        m.nfno AS col_nfno,
+        CAST(m.date AS CHAR) AS col_date,
+        custp.cpf_cgc AS document,
+        m.custno AS client_internal_code,
+        custp.name AS client_name,
+        CONCAT(m.nfno, '/', m.nfse) AS order_code,
+        CAST(m.date AS CHAR) AS payment_date,
+        TRIM(f.prdno) AS sku,
+        prd.name AS product_description,
+        type.name AS category,
+        f.qtty AS quantity,
+        xaprd2.precoUnitario AS total_value
+    FROM pxaprd f
+    JOIN pxa m ON f.xano = m.xano
+    JOIN xaprd2 ON f.xano = xaprd2.xano 
+           AND f.prdno = xaprd2.prdno 
+           AND f.storeno = xaprd2.storeno
+    JOIN custp ON m.custno = custp.no
+    JOIN prd ON f.prdno = prd.no
+    JOIN type ON prd.typeno = type.no
+    WHERE m.storeno = 1
+    AND prd.typeno = 5
+    AND (
+      (m.date > %s)
+      OR (m.date = %s AND m.time > %s)
+      OR (m.date = %s AND m.time = %s AND m.nfno > %s)
+    )
+    ORDER BY m.date, m.time, m.nfno;
     """
     params = (data_busca, data_busca, hora_busca, data_busca, hora_busca, nota_busca)
 
