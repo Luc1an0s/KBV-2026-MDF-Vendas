@@ -44,27 +44,41 @@ def ler_controle():
         return json.load(f)
 
 def conectar_banco():
-    server = SSHTunnelForwarder(
-        (ssh_host, ssh_port), 
-        ssh_username=ssh_user, 
-        ssh_password=ssh_password, 
-        remote_bind_address=(mysql_host, mysql_port)
-    )
-    server.start()
-    conn = mysql.connector.connect(
-        host="127.0.0.1", 
-        port=server.local_bind_port, 
-        user=mysql_user, 
-        password=mysql_password, 
-        database=mysql_db
-    )
-    return conn, server
+    try:
+        print(f"Tentando abrir túnel SSH para {ssh_host}...")
+        server = SSHTunnelForwarder(
+            (ssh_host, ssh_port), 
+            ssh_username=ssh_user, 
+            ssh_password=ssh_password, 
+            remote_bind_address=(mysql_host, mysql_port)
+        )
+        server.start()
+        print(f"Túnel SSH aberto na porta local {server.local_bind_port}")
+        
+        conn = mysql.connector.connect(
+            host="127.0.0.1", 
+            port=server.local_bind_port, 
+            user=mysql_user, 
+            password=mysql_password, 
+            database=mysql_db,
+            connect_timeout=30 # Evita que o script fique travado infinitamente
+        )
+        return conn, server
+    except Exception as e:
+        print(f"ERRO NA CONEXÃO COM BANCO/SSH: {e}")
+        raise
 
 def conectar_sheets():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credenciais_google.json", scope)
-    return gspread.authorize(creds)
+    try:
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        if not os.path.exists("credenciais_google.json"):
+            raise FileNotFoundError("O arquivo credenciais_google.json não foi criado pelo Workflow.")
+            
+        creds = ServiceAccountCredentials.from_json_keyfile_name("credenciais_google.json", scope)
+        return gspread.authorize(creds)
+    except Exception as e:
+        print(f"ERRO NA CONEXÃO COM GOOGLE SHEETS: {e}")
+        raise
 
 def main():
     inicializar_controle()
