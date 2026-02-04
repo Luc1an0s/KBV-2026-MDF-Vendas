@@ -115,7 +115,7 @@ def main():
             prd.name AS product_description,
             type.name AS category,
             f.qtty AS quantity,
-            xaprd2.precoUnitario * f.qtty AS total_value
+            xaprd2.precoUnitario AS total_value
         FROM pxaprd f
         JOIN pxa m ON f.xano = m.xano
         JOIN custp ON m.custno = custp.no
