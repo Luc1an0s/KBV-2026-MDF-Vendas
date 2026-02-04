@@ -121,7 +121,7 @@ def main():
         JOIN custp ON m.custno = custp.no
         JOIN prd ON f.prdno = prd.no
         JOIN type ON prd.typeno = type.no
-        JOIN xaprd2 ON f.xano = xaprd2.xano AND f.prdno = xaprd2.prdno
+        JOIN xaprd2 ON f.xano = xaprd2.xano AND f.prdno = xaprd2.prdno AND f.nfno = xaprd2.nfno AND f.nfse = xaprd2.nfse AND f.storeno = xaprd2.storeno
         WHERE m.storeno = 1
         AND prd.typeno = 5
         AND (
@@ -144,7 +144,7 @@ def main():
         return
 
     df['quantity'] = (df['quantity'] / 1000).round(3)
-    df['total_value'] = (df['total_value'] / 100000).round(2)
+    df['total_value'] = (df['total_value'] / 100).round(2)
 
     df['col_date'] = pd.to_datetime(df['col_date'], errors='coerce')
     df['payment_date'] = pd.to_datetime(df['payment_date'], errors='coerce')
