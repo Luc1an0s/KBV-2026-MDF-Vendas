@@ -10,174 +10,275 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ==============================
+# Configurações
+# ==============================
 def get_env_int(name, default):
     value = os.environ.get(name, "")
-
     return int(value) if value.strip().isdigit() else default
 
+# SSH
 ssh_host = os.environ.get("SSH_HOST")
 ssh_port = get_env_int("SSH_PORT", 22)
 ssh_user = os.environ.get("SSH_USER")
 ssh_password = os.environ.get("SSH_PASSWORD")
 
+# MySQL
 mysql_host = os.environ.get("DB_HOST")
 mysql_user = os.environ.get("DB_USER")
 mysql_password = os.environ.get("DB_PASS")
 mysql_db = os.environ.get("DB_NAME")
 mysql_port = get_env_int("DB_PORT", 3306)
 
+# Google Sheets
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
-ABA_NOME = os.environ.get("ABA_NOME")
-
+ABA_NOME = "TESTE"
+# Controle incremental
 ARQUIVO_CONTROLE = os.path.abspath("controle_incremental.json")
 
-def salvar_controle(date, time, nfno):
-    data_formatada = str(date).replace("-", "").split(" ")[0]
-    if len(data_formatada) < 8 or "1970" in data_formatada or "NaT" in data_formatada:
-        return
-    with open(ARQUIVO_CONTROLE, "w") as f:
-        json.dump({"date": data_formatada, "time": int(time), "nfno": int(nfno)}, f, indent=4)
+# ==============================
+# Configuração de teste
+# ==============================
+MODO_TESTE = True  # True para puxar período retroativo, False para incremental normal
+DATA_INICIO_TESTE = "20260101"
+DATA_FIM_TESTE = "20260131"
 
+# ==============================
+# Funções de controle incremental
+# ==============================
 def inicializar_controle():
     if not os.path.exists(ARQUIVO_CONTROLE):
-        inicio = datetime.now().replace(day=1).strftime('%Y%m%d')
-        salvar_controle(inicio, 0, 0)
+        controle = {
+            "pxa": {"date": "", "time": 0, "nfno": 0},
+            "xalog2": {"date": "", "time": 0, "nfno": 0}
+        }
+        with open(ARQUIVO_CONTROLE, "w") as f:
+            json.dump(controle, f, indent=4)
 
 def ler_controle():
     with open(ARQUIVO_CONTROLE, "r") as f:
         return json.load(f)
 
+def salvar_controle(origem, date, time, nfno):
+    controle = ler_controle()
+    controle[origem] = {"date": date, "time": int(time), "nfno": int(nfno)}
+    with open(ARQUIVO_CONTROLE, "w") as f:
+        json.dump(controle, f, indent=4)
+
+# ==============================
+# Conexão com banco e sheets
+# ==============================
 def conectar_banco():
-    try:
-        print(f"Tentando abrir túnel SSH para {ssh_host}...")
-        server = SSHTunnelForwarder(
-            (ssh_host, ssh_port), 
-            ssh_username=ssh_user, 
-            ssh_password=ssh_password, 
-            remote_bind_address=(mysql_host, mysql_port)
-        )
-        server.start()
-        print(f"Túnel SSH aberto na porta local {server.local_bind_port}")
-        
-        conn = mysql.connector.connect(
-            host="127.0.0.1", 
-            port=server.local_bind_port, 
-            user=mysql_user, 
-            password=mysql_password, 
-            database=mysql_db,
-            connect_timeout=30
-        )
-        return conn, server
-    except Exception as e:
-        print(f"ERRO NA CONEXÃO COM BANCO/SSH: {e}")
-        raise
+    server = SSHTunnelForwarder(
+        (ssh_host, ssh_port),
+        ssh_username=ssh_user,
+        ssh_password=ssh_password,
+        remote_bind_address=(mysql_host, mysql_port)
+    )
+    server.start()
+    conn = mysql.connector.connect(
+        host="127.0.0.1",
+        port=server.local_bind_port,
+        user=mysql_user,
+        password=mysql_password,
+        database=mysql_db,
+        connect_timeout=30
+    )
+    return conn, server
 
 def conectar_sheets():
-    try:
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        if not os.path.exists("credenciais_google.json"):
-            raise FileNotFoundError("O arquivo credenciais_google.json não foi criado pelo Workflow.")
-            
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credenciais_google.json", scope)
-        return gspread.authorize(creds)
-    except Exception as e:
-        print(f"ERRO NA CONEXÃO COM GOOGLE SHEETS: {e}")
-        raise
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_name("credenciais_google.json", scope)
+    return gspread.authorize(creds)
 
-def main():
-    inicializar_controle()
-    controle = ler_controle()
-
-    hoje = datetime.now()
-    inicio_mes_str = hoje.replace(day=1).strftime('%Y%m%d')
-    data_json = str(controle["date"]).replace("-", "")
-
-    if data_json < inicio_mes_str:
-        data_busca, hora_busca, nota_busca = inicio_mes_str, 0, 0
+# ==============================
+# Consultas SQL
+# ==============================
+def buscar_dados_pxa(controle=None):
+    if MODO_TESTE:
+        query = """
+            SELECT
+                m.time AS col_time,
+                m.nfno AS col_nfno,
+                CAST(m.date AS CHAR) AS col_date,
+                custp.cpf_cgc AS document,
+                m.custno AS client_internal_code,
+                custp.name AS client_name,
+                CONCAT(m.nfno, '/', m.nfse) AS order_code,
+                CAST(m.date AS CHAR) AS payment_date,
+                TRIM(f.prdno) AS sku,
+                prd.name AS product_description,
+                type.name AS category,
+                f.qtty AS quantity,
+                xaprd2.precoUnitario AS total_value
+            FROM pxaprd f
+            JOIN pxa m ON f.xano = m.xano
+            JOIN xaprd2 ON f.xano = xaprd2.xano AND f.prdno = xaprd2.prdno AND f.storeno = xaprd2.storeno
+            JOIN custp ON m.custno = custp.no
+            JOIN prd ON f.prdno = prd.no
+            JOIN type ON prd.typeno = type.no
+            WHERE m.storeno = 1
+              AND prd.typeno = 5
+              AND m.date BETWEEN %s AND %s
+            ORDER BY m.date, m.time, m.nfno
+        """
+        params = (DATA_INICIO_TESTE, DATA_FIM_TESTE)
     else:
-        data_busca, hora_busca, nota_busca = data_json, controle["time"], controle["nfno"]
+        data_busca, hora_busca, nota_busca = controle["pxa"]["date"], controle["pxa"]["time"], controle["pxa"]["nfno"]
+        query = """
+            SELECT
+                m.time AS col_time,
+                m.nfno AS col_nfno,
+                CAST(m.date AS CHAR) AS col_date,
+                custp.cpf_cgc AS document,
+                m.custno AS client_internal_code,
+                custp.name AS client_name,
+                CONCAT(m.nfno, '/', m.nfse) AS order_code,
+                CAST(m.date AS CHAR) AS payment_date,
+                TRIM(f.prdno) AS sku,
+                prd.name AS product_description,
+                type.name AS category,
+                f.qtty AS quantity,
+                xaprd2.precoUnitario AS total_value
+            FROM pxaprd f
+            JOIN pxa m ON f.xano = m.xano
+            JOIN xaprd2 ON f.xano = xaprd2.xano AND f.prdno = xaprd2.prdno AND f.storeno = xaprd2.storeno
+            JOIN custp ON m.custno = custp.no
+            JOIN prd ON f.prdno = prd.no
+            JOIN type ON prd.typeno = type.no
+            WHERE m.storeno = 1
+              AND prd.typeno = 5
+              AND ((m.date > %s) OR (m.date = %s AND m.time > %s) OR (m.date = %s AND m.time = %s AND m.nfno > %s))
+            ORDER BY m.date, m.time, m.nfno
+        """
+        params = (data_busca, data_busca, hora_busca, data_busca, hora_busca, nota_busca)
+    return query, params
 
-    print(f"Buscando após: {data_busca} | {hora_busca}")
+def buscar_dados_xalog2(controle=None):
+    if MODO_TESTE:
+        query = """
+            SELECT
+                x.time AS col_time,
+                inv.nfNfno AS col_nfno,
+                CAST(x.date AS CHAR) AS col_date,
+                custp.cpf_cgc AS document,
+                x.custno AS client_internal_code,
+                custp.name AS client_name,
+                CONCAT(MID(x.doc,1,LOCATE('/',x.doc)-1),'/',MID(x.doc,LOCATE('/',x.doc)+1,2)) AS order_code,
+                CAST(x.date AS CHAR) AS payment_date,
+                TRIM(x.prdno) AS sku,
+                prd.name AS product_description,
+                type.name AS category,
+                x.qtty AS quantity,
+                -1 * (((x.qtty / 1000) * (x.price / 100)) - ABS(x.discount / 100)) AS total_value
+            FROM xalog2 x
+            JOIN custp ON x.custno = custp.no
+            JOIN prd ON x.prdno = prd.no
+            JOIN type ON prd.typeno = type.no
+            JOIN inv ON x.storeno = inv.storeno AND x.xano = inv.auxLong1
+            WHERE x.storeno = 1
+              AND prd.typeno = 5
+              AND x.qtty < 0
+              AND x.date BETWEEN %s AND %s
+            ORDER BY x.date, x.time, inv.nfNfno
+        """
+        params = (DATA_INICIO_TESTE, DATA_FIM_TESTE)
+    else:
+        data_busca, hora_busca, nota_busca = controle["xalog2"]["date"], controle["xalog2"]["time"], controle["xalog2"]["nfno"]
+        query = """
+            SELECT
+                x.time AS col_time,
+                inv.nfNfno AS col_nfno,
+                CAST(x.date AS CHAR) AS col_date,
+                custp.cpf_cgc AS document,
+                x.custno AS client_internal_code,
+                custp.name AS client_name,
+                CONCAT(MID(x.doc,1,LOCATE('/',x.doc)-1),'/',MID(x.doc,LOCATE('/',x.doc)+1,2)) AS order_code,
+                CAST(x.date AS CHAR) AS payment_date,
+                TRIM(x.prdno) AS sku,
+                prd.name AS product_description,
+                type.name AS category,
+                x.qtty AS quantity,
+                --1 * (((x.qtty / 1000) * (x.price / 100)) - ABS(x.discount / 100)) AS total_value
+            FROM xalog2 x
+            JOIN custp ON x.custno = custp.no
+            JOIN prd ON x.prdno = prd.no
+            JOIN type ON prd.typeno = type.no
+            JOIN inv ON x.storeno = inv.storeno AND x.xano = inv.auxLong1
+            WHERE x.storeno = 1
+              AND prd.typeno = 5
+              AND x.qtty < 0
+              AND ((x.date > %s) OR (x.date = %s AND x.time > %s) OR (x.date = %s AND x.time = %s AND inv.nfNfno > %s))
+            ORDER BY x.date, x.time, inv.nfNfno
+        """
+        params = (data_busca, data_busca, hora_busca, data_busca, hora_busca, nota_busca)
+    return query, params
 
-    conn, server = conectar_banco()
-
-    query = """
-        SELECT
-        m.time AS col_time,
-        m.nfno AS col_nfno,
-        CAST(m.date AS CHAR) AS col_date,
-        custp.cpf_cgc AS document,
-        m.custno AS client_internal_code,
-        custp.name AS client_name,
-        CONCAT(m.nfno, '/', m.nfse) AS order_code,
-        CAST(m.date AS CHAR) AS payment_date,
-        TRIM(f.prdno) AS sku,
-        prd.name AS product_description,
-        type.name AS category,
-        f.qtty AS quantity,
-        xaprd2.precoUnitario AS total_value
-    FROM pxaprd f
-    JOIN pxa m ON f.xano = m.xano
-    JOIN xaprd2 ON f.xano = xaprd2.xano 
-           AND f.prdno = xaprd2.prdno 
-           AND f.storeno = xaprd2.storeno
-    JOIN custp ON m.custno = custp.no
-    JOIN prd ON f.prdno = prd.no
-    JOIN type ON prd.typeno = type.no
-    WHERE m.storeno = 1
-    AND prd.typeno = 5
-    AND (
-      (m.date > %s)
-      OR (m.date = %s AND m.time > %s)
-      OR (m.date = %s AND m.time = %s AND m.nfno > %s)
-    )
-    ORDER BY m.date, m.time, m.nfno;
-    """
-    params = (data_busca, data_busca, hora_busca, data_busca, hora_busca, nota_busca)
-
-    try:
-        df = pd.read_sql(query, conn, params=params)
-    finally:
-        conn.close()
-        server.stop()
-
+# ==============================
+# Processamento e upload
+# ==============================
+def processar_e_salvar(df, origem, sheet):
     if df.empty:
-        print("Nenhum dado novo encontrado.")
+        print(f"Nenhum dado novo de {origem}.")
         return
 
+    # Ajustes de quantidade e valor separados por origem
     df['quantity'] = (df['quantity'] / 1000).round(3)
-    df['total_value'] = (df['total_value'] / 100).round(2)
+    if origem == "pxa":
+        df['total_value'] = (df['total_value'] / 100).round(2)
+    elif origem == "xalog2":
+        df['total_value'] = df['total_value'].round(2)  # já ajustado na query
 
     df['col_date'] = pd.to_datetime(df['col_date'], errors='coerce')
     df['payment_date'] = pd.to_datetime(df['payment_date'], errors='coerce')
 
+    # Upload incremental
     ultima_linha = df.iloc[-1]
-    
-    client = conectar_sheets()
-    sheet = client.open_by_key(SPREADSHEET_ID).worksheet(ABA_NOME)
-    
-    if not sheet.get_all_values():
-        sheet.append_row(df.columns.tolist())
-
     df_upload = df.copy()
     df_upload['col_date'] = df_upload['col_date'].dt.strftime('%Y-%m-%d')
     df_upload['payment_date'] = df_upload['payment_date'].dt.strftime('%Y-%m-%d')
     df_upload = df_upload.fillna('')
-    
+
+    # Se planilha estiver vazia, adiciona cabeçalho
+    if not sheet.get_all_values():
+        sheet.append_row(df_upload.columns.tolist())
+
     dados = df_upload.values.tolist()
-    
     for i in range(0, len(dados), 100):
-        sheet.append_rows(dados[i:i + 100], value_input_option="USER_ENTERED")
+        sheet.append_rows(dados[i:i+100], value_input_option="USER_ENTERED")
 
-    nova_data_json = ultima_linha['col_date'].strftime('%Y%m%d') if pd.notnull(ultima_linha['col_date']) else data_busca
+    # Atualiza controle incremental apenas se não estiver em modo teste
+    if not MODO_TESTE:
+        nova_data = ultima_linha['col_date'].strftime('%Y%m%d')
+        salvar_controle(origem, nova_data, ultima_linha['col_time'], ultima_linha['col_nfno'])
 
-    salvar_controle(
-        date=nova_data_json,
-        time=ultima_linha['col_time'],
-        nfno=ultima_linha['col_nfno']
-    )
-    
-    print(f"Sucesso! {len(df)} linhas enviadas. Controle: {nova_data_json}")
+    print(f"{len(df)} linhas de {origem} enviadas.")
+
+# ==============================
+# Main
+# ==============================
+def main():
+    inicializar_controle()
+    controle = ler_controle()
+
+    conn, server = conectar_banco()
+    client = conectar_sheets()
+    sheet = client.open_by_key(SPREADSHEET_ID).worksheet(ABA_NOME)
+
+    try:
+        # PXA
+        query, params = buscar_dados_pxa(controle)
+        df_pxa = pd.read_sql(query, conn, params=params)
+        processar_e_salvar(df_pxa, "pxa", sheet)
+
+        # XALOG2
+        query, params = buscar_dados_xalog2(controle)
+        df_xalog2 = pd.read_sql(query, conn, params=params)
+        processar_e_salvar(df_xalog2, "xalog2", sheet)
+
+    finally:
+        conn.close()
+        server.stop()
 
 if __name__ == "__main__":
     main()
