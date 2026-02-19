@@ -10,42 +10,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ==============================
-# Configurações
-# ==============================
 def get_env_int(name, default):
     value = os.environ.get(name, "")
     return int(value) if value.strip().isdigit() else default
 
-# SSH
 ssh_host = os.environ.get("SSH_HOST")
 ssh_port = get_env_int("SSH_PORT", 22)
 ssh_user = os.environ.get("SSH_USER")
 ssh_password = os.environ.get("SSH_PASSWORD")
 
-# MySQL
 mysql_host = os.environ.get("DB_HOST")
 mysql_user = os.environ.get("DB_USER")
 mysql_password = os.environ.get("DB_PASS")
 mysql_db = os.environ.get("DB_NAME")
 mysql_port = get_env_int("DB_PORT", 3306)
 
-# Google Sheets
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 ABA_NOME = "TESTE"
-# Controle incremental
+
 ARQUIVO_CONTROLE = os.path.abspath("controle_incremental.json")
 
-# ==============================
-# Configuração de teste
-# ==============================
-MODO_TESTE = True  # True para puxar período retroativo, False para incremental normal
+MODO_TESTE = False  # True para puxar período retroativo, False para incremental normal
 DATA_INICIO_TESTE = "20260101"
 DATA_FIM_TESTE = "20260131"
 
-# ==============================
-# Funções de controle incremental
-# ==============================
 def inicializar_controle():
     if not os.path.exists(ARQUIVO_CONTROLE):
         controle = {
@@ -65,9 +53,6 @@ def salvar_controle(origem, date, time, nfno):
     with open(ARQUIVO_CONTROLE, "w") as f:
         json.dump(controle, f, indent=4)
 
-# ==============================
-# Conexão com banco e sheets
-# ==============================
 def conectar_banco():
     server = SSHTunnelForwarder(
         (ssh_host, ssh_port),
@@ -91,9 +76,7 @@ def conectar_sheets():
     creds = ServiceAccountCredentials.from_json_keyfile_name("credenciais_google.json", scope)
     return gspread.authorize(creds)
 
-# ==============================
-# Consultas SQL
-# ==============================
+
 def buscar_dados_pxa(controle=None):
     if MODO_TESTE:
         query = """
@@ -118,7 +101,7 @@ def buscar_dados_pxa(controle=None):
             JOIN prd ON f.prdno = prd.no
             JOIN type ON prd.typeno = type.no
             WHERE m.storeno = 1
-              AND prd.typeno = 5
+              AND prd.no IN (94533, 94538, 96122, 97782, 97831, 94519, 94523, 94524, 94525, 94526, 94527, 94529, 94530, 94532, 94537, 94539, 94542, 94543, 94927, 96004, 96005, 96006, 96007, 96108, 96109, 96287, 96288, 96289, 96401, 96402, 96407, 96718, 96719, 96720, 96721, 96722, 96723, 96724, 96883, 96887, 96889, 96895, 97421, 97423, 97424, 97425, 97426, 97427, 97428, 97429, 97651, 98164)
               AND m.date BETWEEN %s AND %s
             ORDER BY m.date, m.time, m.nfno
         """
@@ -147,7 +130,7 @@ def buscar_dados_pxa(controle=None):
             JOIN prd ON f.prdno = prd.no
             JOIN type ON prd.typeno = type.no
             WHERE m.storeno = 1
-              AND prd.typeno = 5
+              AND prd.no IN (94533, 94538, 96122, 97782, 97831, 94519, 94523, 94524, 94525, 94526, 94527, 94529, 94530, 94532, 94537, 94539, 94542, 94543, 94927, 96004, 96005, 96006, 96007, 96108, 96109, 96287, 96288, 96289, 96401, 96402, 96407, 96718, 96719, 96720, 96721, 96722, 96723, 96724, 96883, 96887, 96889, 96895, 97421, 97423, 97424, 97425, 97426, 97427, 97428, 97429, 97651, 98164)
               AND ((m.date > %s) OR (m.date = %s AND m.time > %s) OR (m.date = %s AND m.time = %s AND m.nfno > %s))
             ORDER BY m.date, m.time, m.nfno
         """
@@ -177,7 +160,7 @@ def buscar_dados_xalog2(controle=None):
             JOIN type ON prd.typeno = type.no
             JOIN inv ON x.storeno = inv.storeno AND x.xano = inv.auxLong1
             WHERE x.storeno = 1
-              AND prd.typeno = 5
+              AND prd.no IN (94533, 94538, 96122, 97782, 97831, 94519, 94523, 94524, 94525, 94526, 94527, 94529, 94530, 94532, 94537, 94539, 94542, 94543, 94927, 96004, 96005, 96006, 96007, 96108, 96109, 96287, 96288, 96289, 96401, 96402, 96407, 96718, 96719, 96720, 96721, 96722, 96723, 96724, 96883, 96887, 96889, 96895, 97421, 97423, 97424, 97425, 97426, 97427, 97428, 97429, 97651, 98164)
               AND x.qtty < 0
               AND x.date BETWEEN %s AND %s
             ORDER BY x.date, x.time, inv.nfNfno
@@ -206,7 +189,7 @@ def buscar_dados_xalog2(controle=None):
             JOIN type ON prd.typeno = type.no
             JOIN inv ON x.storeno = inv.storeno AND x.xano = inv.auxLong1
             WHERE x.storeno = 1
-              AND prd.typeno = 5
+              AND prd.no IN (94533, 94538, 96122, 97782, 97831, 94519, 94523, 94524, 94525, 94526, 94527, 94529, 94530, 94532, 94537, 94539, 94542, 94543, 94927, 96004, 96005, 96006, 96007, 96108, 96109, 96287, 96288, 96289, 96401, 96402, 96407, 96718, 96719, 96720, 96721, 96722, 96723, 96724, 96883, 96887, 96889, 96895, 97421, 97423, 97424, 97425, 97426, 97427, 97428, 97429, 97651, 98164)
               AND x.qtty < 0
               AND ((x.date > %s) OR (x.date = %s AND x.time > %s) OR (x.date = %s AND x.time = %s AND inv.nfNfno > %s))
             ORDER BY x.date, x.time, inv.nfNfno
@@ -214,32 +197,29 @@ def buscar_dados_xalog2(controle=None):
         params = (data_busca, data_busca, hora_busca, data_busca, hora_busca, nota_busca)
     return query, params
 
-# ==============================
-# Processamento e upload
-# ==============================
+
 def processar_e_salvar(df, origem, sheet):
     if df.empty:
         print(f"Nenhum dado novo de {origem}.")
         return
 
-    # Ajustes de quantidade e valor separados por origem
     df['quantity'] = (df['quantity'] / 1000).round(3)
     if origem == "pxa":
         df['total_value'] = (df['total_value'] / 100).round(2)
     elif origem == "xalog2":
-        df['total_value'] = df['total_value'].round(2)  # já ajustado na query
+        df['total_value'] = df['total_value'].round(2)  
 
     df['col_date'] = pd.to_datetime(df['col_date'], errors='coerce')
     df['payment_date'] = pd.to_datetime(df['payment_date'], errors='coerce')
 
-    # Upload incremental
+    
     ultima_linha = df.iloc[-1]
     df_upload = df.copy()
     df_upload['col_date'] = df_upload['col_date'].dt.strftime('%Y-%m-%d')
     df_upload['payment_date'] = df_upload['payment_date'].dt.strftime('%Y-%m-%d')
     df_upload = df_upload.fillna('')
 
-    # Se planilha estiver vazia, adiciona cabeçalho
+    
     if not sheet.get_all_values():
         sheet.append_row(df_upload.columns.tolist())
 
@@ -247,16 +227,14 @@ def processar_e_salvar(df, origem, sheet):
     for i in range(0, len(dados), 100):
         sheet.append_rows(dados[i:i+100], value_input_option="USER_ENTERED")
 
-    # Atualiza controle incremental apenas se não estiver em modo teste
+    
     if not MODO_TESTE:
         nova_data = ultima_linha['col_date'].strftime('%Y%m%d')
         salvar_controle(origem, nova_data, ultima_linha['col_time'], ultima_linha['col_nfno'])
 
     print(f"{len(df)} linhas de {origem} enviadas.")
 
-# ==============================
-# Main
-# ==============================
+
 def main():
     inicializar_controle()
     controle = ler_controle()
