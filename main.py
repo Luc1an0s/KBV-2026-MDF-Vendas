@@ -26,7 +26,7 @@ mysql_db = os.environ.get("DB_NAME")
 mysql_port = get_env_int("DB_PORT", 3306)
 
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
-ABA_NOME = "TESTE"
+ABA_NOME = os.environ.get("ABA_NOME")
 
 ARQUIVO_CONTROLE = os.path.abspath("controle_incremental.json")
 
